@@ -48,6 +48,8 @@ class FloodDataset(utils.Sequence):
         return math.ceil(len(self.metadata) / self.batch_sz)
 
     def __getitem__(self, idx):
+        # Dieu chinh lai idx neu lay cai cuoi cung
+        idx = self.__len__() -1 if idx < 0 else idx
         start_idx = idx * self.batch_sz
         end_idx = min(start_idx + self.batch_sz, len(self.metadata))
 
@@ -111,11 +113,19 @@ class FloodDataset(utils.Sequence):
         
         
 if __name__ == "__main__":
-    dataset = FloodDataset("../FloodDataset", 8, 576)
+    dataset = FloodDataset("../FloodDataset", 16, 576)
     print("So luong anh: ", len(dataset.metadata))
     print("So luong batch: ", len(dataset))
+    
+    print("\nidx=0")
     print(dataset[0][0].shape)
     print(dataset[0][1].shape)
+
+    print("\nidx=18")
+    print(dataset[18][0].shape)
+    print(dataset[18][1].shape)
+
+    print("\nidx=-1")
     print(dataset[-1][0].shape)
     print(dataset[-1][1].shape)
     
