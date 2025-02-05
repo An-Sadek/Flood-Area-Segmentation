@@ -1,7 +1,13 @@
+<<<<<<< HEAD
 ./test.ipynb
 ./dog.png
 ./cat.jpg
 ./test
 
+=======
+test.ipynb
+dog.png
+cat.jpg
+>>>>>>> dataset
 test
 unet.jpg
