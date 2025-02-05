@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 from PIL import Image, ImageOps
 from PIL import ImageFilter
+from sklearn.model_selection import train_test_split
 
 import tensorflow as tf
 from tensorflow import keras
@@ -14,17 +15,46 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 class FloodDataset(utils.Sequence):
 
-    def __init__(self, root, batch_sz: int, img_sz: int|tuple, is_trainset=True, channels=1):
+    def __init__(self, 
+        root: str, 
+        batch_sz: int, 
+        img_sz: int|tuple, 
+        is_train: bool=True, 
+        channels: int=1, 
+        train_ratio: float=0.7, 
+        random_state: int=42
+):
+        """
+        root: Duong dan cua thu muc goc chua Image, Mask, metadata.csv
+        batch_sz: So luong anh trong 1 batch
+        img_sz: Kich thuoc dau ra cua anh
+        kind_of_set: Loai dataset muon lay. Bao gom: train, valid, test.
+            train: Dung de huan luyen
+            test: Dung de danh gia qua trinh hoc cua mo hinh
+        channels: So kenh mau cua mo hinh. Gia tri bao gom 1 hoac 3.
+        train_ratio: Ti le 
+        """
         super().__init__() # Khoi tao lop utils.Sequence
         
         # Kiem tra duong dan root 
         assert os.path.exists(root), f"Duong dan khong ton tai: {root}"
         self.root = root
 
-        # Doc duong dan
+        # Chia train test
+        ## Doc duong dan
         metadata_path = os.path.join(root, "metadata.csv")
         assert os.path.exists(metadata_path), f"Khong tim thay metadata.csv: {metadata_path}"
-        self.metadata = pd.read_csv(metadata_path) # Cot 0 la Image, cot 1 la Mask
+        metadata = pd.read_csv(metadata_path) # Cot 0 la Image, cot 1 la Mask
+
+        ## Chia du lieu
+        assert train_ratio >= 0 and train_ratio <= 1, "Ti le train phai nam trong pham vi [0, 1]"
+        self.train_ratio = train_ratio
+
+        assert random_state >= 0
+        self.random_state = random_state
+
+        self.train_metadata = metadata.sample(frac=train_ratio, random_state=random_state)
+        self.test_metadata = metadata.drop(self.train_metadata.index)
 
         # Batch size
         self.batch_sz = batch_sz
@@ -37,9 +67,6 @@ class FloodDataset(utils.Sequence):
             assert img_sz[0] == img_sz[1], "Chieu dai phai bang chieu rong"
             self.img_sz = img_sz
 
-        # Danh dau la train set hoac test set (khong co nhan)
-        self.is_trainset = is_trainset
-
         # RGB hoac mau xam
         assert channels in [1, 3], "Khong gian mau la 1 (anh xam) hoac 3 (RGB"
         self.channels = channels
@@ -48,10 +75,16 @@ class FloodDataset(utils.Sequence):
         return math.ceil(len(self.metadata) / self.batch_sz)
 
     def __getitem__(self, idx):
+        # Lay metadata theo ham khoi tao
+        if self.is_train:
+            metadata = train_metadata
+        else:
+            metadata = test_metadata
+        
         # Dieu chinh lai idx neu lay cai cuoi cung
         idx = self.__len__() -1 if idx < 0 else idx
         start_idx = idx * self.batch_sz
-        end_idx = min(start_idx + self.batch_sz, len(self.metadata))
+        end_idx = min(start_idx + self.batch_sz, len(metadata))
 
         # Tao batch img thu idx
         # Su dung try de tranh lon xon voi mask
@@ -81,10 +114,6 @@ class FloodDataset(utils.Sequence):
 
         curr_batch_img = tf.constant(curr_batch_img, dtype=float)
 
-        # Tra ve neu la test set
-        if not self.is_trainset:
-            return (curr_batch_img,)
-
         # Tao batch mask thu idx
         try:
             mask_dir = os.path.join(self.root, "Mask")
@@ -110,6 +139,7 @@ class FloodDataset(utils.Sequence):
         curr_batch_mask = tf.constant(curr_batch_mask, dtype=float)
 
         return (curr_batch_img, curr_batch_mask)
+        
         
         
 if __name__ == "__main__":
