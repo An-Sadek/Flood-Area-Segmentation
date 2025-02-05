@@ -57,7 +57,8 @@ class ConvT(layers.Layer):
 
         self.convT = layers.Conv2DTranspose(
             out_channels,
-            (2, 2),
+            kernel_size=(2, 2),
+            strides=(2, 2),
             padding="same", 
             use_bias=False, 
             activation = "relu",
@@ -94,7 +95,7 @@ class UNet(layers.Layer):
         self.down4 = ConvBlock(features[3], strides, padding, dropout)
         
         # Bottleneck
-        self.bottleneck = ConvBlock(features[-1], strides, padding, dropout)
+        self.bottleneck = ConvBlock(features[3], strides, padding, dropout)
 
         # Decoder
         self.convT1 = ConvT(features[3], dropout)
@@ -116,21 +117,49 @@ class UNet(layers.Layer):
     def call(self, inputs):
         # Encoder
         down1 = self.down1(inputs)
-        x = self.pool(down1)
+        x = self.pool(down1) # 284, 284, 64
 
         down2 = self.down2(x)
-        x = self.pool(down2)
+        x = self.pool(down2) # 140, 140, 128
 
         down3 = self.down3(x)
-        x = self.pool(down3)
+        x = self.pool(down3) # 68, 68, 256
 
         down4 = self.down4(x)
-        x = self.pool(down4)
+        x = self.pool(down4) # 32, 32, 512
+
+        # Bottleneck
+        x = self.bottleneck(x) # 28, 28, 512
+        
+        # Decoder
+        x = self.convT1(x) # 28, 28, 512
+        x = self.copy_crop(x, down4) # 56, 56, 1024
+        x = self.up1(x) # 52, 52, 512
+
+        x = self.convT2(x) # 104, 104, 256
+        x = self.copy_crop(x, down3) # 104, 104, 512
+        x = self.up2(x) # 100, 100, 256
+
+        x = self.convT3(x) # 200, 200, 128
+        x = self.copy_crop(x, down2) # 200, 200, 256
+        x = self.up3(x) # 196, 196, 128
+
+        x = self.convT4(x) # 392, 392, 64
+        x = self.copy_crop(x, down1) # 392, 392, 128
+        x = self.up4(x) # 388, 388, 64
+
+        # Final conv
+        x = self.final_conv(x) # 386, 386, 2
 
         return x
 
-    def copy_crop(self, down, x):
-        pass
+    def copy_crop(self, x, down):
+        w = x.shape[1]
+        h = x.shape[2]
+        down = down[:, :w, :h, :]
+        x = tf.concat([x, down], 3)
+
+        return x
 
 
 if __name__ == "__main__":
@@ -138,6 +167,7 @@ if __name__ == "__main__":
     test_data = tf.random.normal(shape=(2, 572, 572, 1))
 
     # Test ConvBlock
+    print("\n\nConvBlock test")
     layer_doubleconv = ConvBlock(10, 1, "same", 0.5)
     outputs_convblock = layer_doubleconv(inputs)
 
@@ -146,14 +176,18 @@ if __name__ == "__main__":
     print(result_convblock.shape)
 
     # Test ConvT
+    print("\n\nConvT test")
+    inputs_convT = keras.Input(shape=(10, 10, 1))
     layer_convT = ConvT(12, 0.5)
-    outputs_convT = layer_convT(inputs)
+    outputs_convT = layer_convT(inputs_convT)
 
-    model_convT = keras.Model(inputs, outputs_convT)
-    result_convT = model_convT(test_data)
+    data_convT = tf.random.normal(shape=(2, 10, 10, 1))
+    model_convT = keras.Model(inputs_convT, outputs_convT)
+    result_convT = model_convT(data_convT)
     print(result_convT.shape)
 
-    # Test UNet 1
+    #Test UNet 1
+    print("\n\nTest UNet 1, padding = 0")
     layer_unet1 = UNet(feature_fraction=1, strides=1, padding="same", dropout=0.5)
     outputs_unet1 = layer_unet1(inputs)
 
@@ -162,6 +196,7 @@ if __name__ == "__main__":
     print(result_unet1.shape)
 
     # Test UNet 2
+    print("\n\nTest UNet 2, padding = 1")
     layer_unet2 = UNet(feature_fraction=1, strides=1, padding="valid", dropout=0.5)
     outputs_unet2 = layer_unet2(inputs)
 
