@@ -32,9 +32,13 @@ class FloodDataset(utils.Sequence):
             train: Dung de huan luyen
             test: Dung de danh gia qua trinh hoc cua mo hinh
         channels: So kenh mau cua mo hinh. Gia tri bao gom 1 hoac 3.
-        train_ratio: Ti le 
+        train_ratio: Ti le tep huan luyen
         """
         super().__init__() # Khoi tao lop utils.Sequence
+        
+        # Seed ngau nhien
+        assert random_state >= 0
+        self.random_state = random_state
         
         # Kiem tra duong dan root 
         assert os.path.exists(root), f"Duong dan khong ton tai: {root}"
@@ -50,11 +54,11 @@ class FloodDataset(utils.Sequence):
         assert train_ratio >= 0 and train_ratio <= 1, "Ti le train phai nam trong pham vi [0, 1]"
         self.train_ratio = train_ratio
 
-        assert random_state >= 0
-        self.random_state = random_state
-
-        self.train_metadata = metadata.sample(frac=train_ratio, random_state=random_state)
-        self.test_metadata = metadata.drop(self.train_metadata.index)
+        train_metadata = metadata.sample(frac=train_ratio, random_state=random_state)
+        if is_train:
+            self.metadata = train_metadata
+        else:
+            self.metadata = metadata.drop(train_metadata.index)
 
         # Batch size
         self.batch_sz = batch_sz
@@ -75,28 +79,21 @@ class FloodDataset(utils.Sequence):
         return math.ceil(len(self.metadata) / self.batch_sz)
 
     def __getitem__(self, idx):
-        # Lay metadata theo ham khoi tao
-        if self.is_train:
-            metadata = train_metadata
-        else:
-            metadata = test_metadata
-        
         # Dieu chinh lai idx neu lay cai cuoi cung
-        idx = self.__len__() -1 if idx < 0 else idx
+        idx = self.__len__() - 1 if idx < 0 else idx
         start_idx = idx * self.batch_sz
-        end_idx = min(start_idx + self.batch_sz, len(metadata))
-
+        end_idx = start_idx + self.batch_sz
+        
         # Tao batch img thu idx
-        # Su dung try de tranh lon xon voi mask
+        img_dir = os.path.join(self.root, "Image")
+        curr_img_paths = self.metadata.iloc[start_idx: end_idx, 0] # Cot Image
+        curr_img_paths = [os.path.join(img_dir, img_path) for img_path in curr_img_paths]
+        curr_batch_img = np.zeros(
+            shape=(len(curr_img_paths), self.img_sz[0], self.img_sz[1], self.channels),
+            dtype=float
+        )
+        
         try:
-            img_dir = os.path.join(self.root, "Image")
-            curr_img_paths = self.metadata.iloc[start_idx: end_idx, 0] # Cot Image
-            curr_img_paths = [os.path.join(img_dir, img_path) for img_path in curr_img_paths]
-            curr_batch_img = np.zeros(
-                shape=(len(curr_img_paths), self.img_sz[0], self.img_sz[1], self.channels),
-                dtype=float
-            )
-            
             for i in range(len(curr_img_paths)):
                 img = Image.open(curr_img_paths[i])
                 img = img.resize(self.img_sz) # Chuan hoa kich thuoc
@@ -112,18 +109,18 @@ class FloodDataset(utils.Sequence):
         except Exception as e:
             print("Co loi xay ra", e)
 
-        curr_batch_img = tf.constant(curr_batch_img, dtype=float)
+        finally:
+            curr_batch_img = tf.constant(curr_batch_img, dtype=float)
 
         # Tao batch mask thu idx
+        mask_dir = os.path.join(self.root, "Mask")
+        curr_mask_paths = self.metadata.iloc[start_idx: end_idx, 1] # Cot Mask
+        curr_mask_paths = [os.path.join(mask_dir, mask_path) for mask_path in curr_mask_paths]
+        curr_batch_mask = np.zeros(
+            shape=(len(curr_mask_paths), self.img_sz[0], self.img_sz[1], self.channels),
+            dtype=int
+        )
         try:
-            mask_dir = os.path.join(self.root, "Mask")
-            curr_mask_paths = self.metadata.iloc[start_idx: end_idx, 1] # Cot Mask
-            curr_mask_paths = [os.path.join(mask_dir, mask_path) for mask_path in curr_mask_paths]
-            curr_batch_mask = np.zeros(
-                shape=(len(curr_mask_paths), self.img_sz[0], self.img_sz[1], self.channels),
-                dtype=int
-            )
-    
             for i in range(len(curr_mask_paths)):
                 mask = Image.open(curr_mask_paths[i]).convert("L")
                 mask = mask.resize(self.img_sz)
@@ -136,27 +133,45 @@ class FloodDataset(utils.Sequence):
         except Exception as e:
             print("Co loi xay ra: ", e)
 
-        curr_batch_mask = tf.constant(curr_batch_mask, dtype=float)
+        finally:
+            curr_batch_mask = tf.constant(curr_batch_mask, dtype=float)
 
         return (curr_batch_img, curr_batch_mask)
         
         
         
-if __name__ == "__main__":
-    dataset = FloodDataset("../FloodDataset", 16, 576)
-    print("So luong anh: ", len(dataset.metadata))
-    print("So luong batch: ", len(dataset))
+if __name__ == "__main__": 
+    # Train set
+    print("\n\nCheck train set")
+    trainset = FloodDataset("../FloodDataset", 16, 576)
+    
+    print("So luong anh train: ", len(trainset.metadata))
+    print("So luong batch train: ", len(trainset))
+    print("So luong anh train batch cuoi: ", len(trainset.metadata) % 16)
     
     print("\nidx=0")
-    print(dataset[0][0].shape)
-    print(dataset[0][1].shape)
-
-    print("\nidx=18")
-    print(dataset[18][0].shape)
-    print(dataset[18][1].shape)
+    print(trainset[0][0].shape)
+    print(trainset[0][1].shape)
 
     print("\nidx=-1")
-    print(dataset[-1][0].shape)
-    print(dataset[-1][1].shape)
+    print(trainset[-1][0].shape)
+    print(trainset[-1][1].shape)
+
+    # Test set
+    print("\n\nCheck test set")
+    testset = FloodDataset("../FloodDataset", 16, 576, is_train=False)
+    
+    print("So luong anh test: ", len(testset.metadata))
+    print("So luong batch test: ", len(testset))
+    print("So luong anh test batch cuoi: ", len(testset.metadata) % 16)
+
+    print("\nidx=0")
+    print(testset[0][0].shape)
+    print(testset[0][1].shape)
+
+    print("\nidx=-1")
+    print(testset[-1][0].shape)
+    print(testset[-1][1].shape)
+
     
         
