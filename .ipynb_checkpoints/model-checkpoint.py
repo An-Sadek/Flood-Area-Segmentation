@@ -42,8 +42,11 @@ class ConvBlock(layers.Layer):
 
 class UNet(layers.Layer):
 
-    def __init__(self):
-        pass
+    def __init__(self, feature_fraction: int, dropout):
+        assert feature_fraction in range(1, 65, 2), "Du lieu ngoai tam"
+
+        features = [64, 
+        self.down1 = ConvBlock(64, dropout)
 
     def call(self):
         pass
@@ -59,7 +62,6 @@ if __name__ == "__main__":
 
     result_convblock = doubleconv_layer(test_convblock)
     print(result_convblock.shape)
-    
 
     print("\n\nSuccess\n\n")
                          
